@@ -10,8 +10,7 @@ public class PageDomain extends Domain {
         super(debugger);
     }
 
-    @Override
-    public String getDomainName() {
+    public static String getDomainName() {
         return "Page";
     }
 

@@ -9,109 +9,108 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class IndexedDBDomain extends Domain {
-    private Integer mRequestId;
-    private SQLiteDatabase mDatabase;
-    private ArrayList<String> mTableNames = new ArrayList<String>();
+    private HashMap<String, SQLiteDatabase> mDatabaseMap = new HashMap<String, SQLiteDatabase>();
 
-    public IndexedDBDomain(Debugger debugger, SQLiteDatabase database) {
+    public IndexedDBDomain(Debugger debugger) {
         super(debugger);
-        mDatabase = database;
-
-        Cursor cursor = mDatabase.rawQuery("SELECT name FROM sqlite_master WHERE type='table'", null);
-        if (cursor.moveToFirst()) {
-            while (!cursor.isAfterLast()) {
-                mTableNames.add(cursor.getString(cursor.getColumnIndex("name")));
-                cursor.moveToNext();
-            }
-        }
     }
 
-    @Override
-    public String getDomainName() {
+    public static String getDomainName() {
         return "IndexedDB";
+    }
+
+    public void addDatabase(String name, SQLiteDatabase database) {
+        mDatabaseMap.put(name, database);
     }
 
     @Override
     public Map<String, Object> respond(String method, Map<String, Object> params) {
-        Object requestId = params.get("requestId");
-        if (requestId != null) {
-            mRequestId = (Integer) requestId;
-        }
+        Integer requestId = (Integer) params.get("requestId");
 
         HashMap<String, Object> response = new HashMap<String, Object>();
         String error = null;
         if ("requestDatabaseNamesForFrame".equals(method)) {
-            broadcastDatabaseNames();
+            broadcastDatabaseNames(requestId);
         } else if ("requestDatabase".equals(method)) {
-            broadcastDatabase();
+            String name = (String) params.get("databaseName");
+            broadcastDatabase(requestId, name);
         } else if ("requestData".equals(method)) {
+            String name = (String) params.get("databaseName");
             String tableName = (String) params.get("objectStoreName");
             Integer pageSize = (Integer) params.get("pageSize");
             Integer skipCount = (Integer) params.get("skipCount");
-            broadcastTable(tableName, pageSize, skipCount);
+            broadcastTable(requestId, name, tableName, pageSize, skipCount);
         }
 
         response.put("error", error);
         return response;
     }
 
-    private void broadcastDatabaseNames() {
+    private void broadcastDatabaseNames(Integer requestId) {
         HashMap<String, Object> event = new HashMap<String, Object>();
         HashMap<String, Object> params = new HashMap<String, Object>();
         HashMap<String, Object> databases = new HashMap<String, Object>();
         ArrayList<String> names = new ArrayList<String>();
+
         event.put("method", "IndexedDB.databaseNamesLoaded");
         event.put("params", params);
-        params.put("requestId", mRequestId);
+        params.put("requestId", requestId);
         params.put("securityOriginWithDatabaseNames", databases);
+        databases.put("securityOrigin", mDebugger.getMetadata().get(Debugger.APP_ID_KEY));
         databases.put("databaseNames", names);
-        databases.put("securityOrigin", "com.freshbooks.android");
-        names.add("FreshBooks");
+        names.addAll(mDatabaseMap.keySet());
 
         mDebugger.sendEvent(event);
     }
 
-    private void broadcastDatabase() {
+    private void broadcastDatabase(Integer requestId, String databaseName) {
         HashMap<String, Object> event = new HashMap<String, Object>();
         HashMap<String, Object> params = new HashMap<String, Object>();
-        HashMap<String, Object> database = new HashMap<String, Object>();
+        HashMap<String, Object> databaseObject = new HashMap<String, Object>();
         ArrayList<HashMap<String, Object>> objectStores = new ArrayList<HashMap<String, Object>>();
         event.put("method", "IndexedDB.databaseLoaded");
         event.put("params", params);
-        params.put("requestId", mRequestId);
-        params.put("databaseWithObjectStores", database);
-        database.put("name", "FreshBooks");
-        database.put("version", "N/A");
-        database.put("objectStores", objectStores);
-
+        params.put("requestId", requestId);
+        params.put("databaseWithObjectStores", databaseObject);
+        databaseObject.put("name", databaseName);
+        databaseObject.put("version", "N/A");
+        databaseObject.put("objectStores", objectStores);
 
         HashMap<String, Object> keyPath = new HashMap<String, Object>();
         keyPath.put("string", "_id");
         keyPath.put("type", "string");
-        for (String table : mTableNames) {
-            HashMap<String, Object> store = new HashMap<String, Object>();
-            store.put("autoIncrement", false);
-            store.put("indexes", new ArrayList());
-            store.put("keyPath", keyPath);
-            store.put("name", table);
 
-            objectStores.add(store);
+        SQLiteDatabase database = mDatabaseMap.get(databaseName);
+
+        Cursor cursor = database.rawQuery("SELECT name FROM sqlite_master WHERE type='table'", null);
+        if (cursor.moveToFirst()) {
+            while (!cursor.isAfterLast()) {
+                HashMap<String, Object> store = new HashMap<String, Object>();
+                store.put("autoIncrement", false);
+                store.put("indexes", new ArrayList());
+                store.put("keyPath", keyPath);
+                store.put("name", cursor.getString(cursor.getColumnIndex("name")));
+
+                objectStores.add(store);
+                cursor.moveToNext();
+            }
         }
 
         mDebugger.sendEvent(event);
     }
 
-    private void broadcastTable(String table, Integer pageSize, Integer skipCount) {
+    private void broadcastTable(Integer requestId, String databaseName, String table, Integer pageSize, Integer skipCount) {
         HashMap<String, Object> event = new HashMap<String, Object>();
         HashMap<String, Object> params = new HashMap<String, Object>();
         ArrayList<HashMap<String, Object>> objectStoreDataEntries = new ArrayList<HashMap<String, Object>>();
         event.put("method", "IndexedDB.objectStoreDataLoaded");
         event.put("params", params);
 
-        params.put("requestId", mRequestId);
+        params.put("requestId", requestId);
         params.put("objectStoreDataEntries", objectStoreDataEntries);
 
-        Cursor cursor = mDatabase.query(table, null, null, null, null, null, "_id", Integer.toString(pageSize));
+        SQLiteDatabase database = mDatabaseMap.get(databaseName);
+        Cursor cursor = database.query(table, null, null, null, null, null, "_id", Integer.toString(pageSize));
         if (cursor.moveToFirst()) {
             while (!cursor.isAfterLast()) {
                 HashMap<String, Object> entry = new HashMap<String, Object>();
@@ -139,7 +138,7 @@ public class IndexedDBDomain extends Domain {
 
                 value.put("className", table);
                 value.put("description", table);
-                value.put("objectId", table + "." + id);
+                value.put("objectId", databaseName + "." + table + "." + id);
                 value.put("type", "object");
 
                 cursor.moveToNext();

@@ -9,16 +9,18 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class RuntimeDomain extends Domain {
-    private SQLiteDatabase mDatabase;
+    private HashMap<String, SQLiteDatabase> mDatabaseMap = new HashMap<String, SQLiteDatabase>();
 
-    public RuntimeDomain(Debugger debugger, SQLiteDatabase database) {
+    public RuntimeDomain(Debugger debugger) {
         super(debugger);
-        mDatabase = database;
     }
 
-    @Override
-    public String getDomainName() {
+    public static String getDomainName() {
         return "Runtime";
+    }
+
+    public void addDatabase(String name, SQLiteDatabase database) {
+        mDatabaseMap.put(name, database);
     }
 
     @Override
@@ -29,12 +31,13 @@ public class RuntimeDomain extends Domain {
         if ("getProperties".equals(method)) {
             String objectId = (String) params.get("objectId");
             String[] parts = objectId.split("\\.");
-            String table = parts[0];
-            String id = parts[1];
+            String databaseName = parts[0];
+            String table = parts[1];
+            String id = parts[2];
 
             HashMap<String, Object> result = new HashMap<String, Object>();
             response.put("result", result);
-            result.put("result", getObject(table, id));
+            result.put("result", getObject(databaseName, table, id));
         }
 
         response.put("error", error);
@@ -42,10 +45,11 @@ public class RuntimeDomain extends Domain {
     }
 
 
-    private ArrayList<Map<String, Object>> getObject(String table, String id) {
+    private ArrayList<Map<String, Object>> getObject(String databaseName, String table, String id) {
         ArrayList<Map<String, Object>> columns  = new ArrayList<Map<String, Object>>();
 
-        Cursor cursor = mDatabase.query(table, null, "_id = ?", new String[] {id}, null, null, null);
+        SQLiteDatabase database = mDatabaseMap.get(databaseName);
+        Cursor cursor = database.query(table, null, "_id = ?", new String[] {id}, null, null, null);
         if (cursor.moveToFirst()) {
             for (String columnName : cursor.getColumnNames()) {
                 HashMap<String, Object> column = new HashMap<String, Object>();

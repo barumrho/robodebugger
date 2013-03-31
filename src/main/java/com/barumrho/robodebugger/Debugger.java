@@ -25,6 +25,15 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class Debugger extends WebSocketConnectionHandler {
+    public static final String APP_ID_KEY = "app_id";
+    public static final String APP_NAME_KEY = "app_name";
+    public static final String APP_VERSION_KEY = "app_version";
+    public static final String APP_BUILD_KEY = "app_build";
+    public static final String APP_ICON_BASE_64_KEY = "app_icon_base64";
+    public static final String DEVICE_ID_KEY = "device_id";
+    public static final String DEVICE_MODEL_KEY = "device_model";
+    public static final String DEVICE_NAME_KEY = "device_name";
+
     private static final String TAG = "ROBODEBUGGER";
     private String mWebSocketUri;
     private WebSocketConnection mConnection;
@@ -47,31 +56,55 @@ public class Debugger extends WebSocketConnectionHandler {
         }
 
         mMetadata = new HashMap<String, String>();
-        mMetadata.put("app_id", packageName);
+        mMetadata.put(APP_ID_KEY, packageName);
 
         if (packageInfo != null) {
-            mMetadata.put("app_name", context.getString(packageInfo.applicationInfo.labelRes));
-            mMetadata.put("app_version", packageInfo.versionName);
-            mMetadata.put("app_build", Integer.toString(packageInfo.versionCode));
+            mMetadata.put(APP_NAME_KEY, context.getString(packageInfo.applicationInfo.labelRes));
+            mMetadata.put(APP_VERSION_KEY, packageInfo.versionName);
+            mMetadata.put(APP_BUILD_KEY, Integer.toString(packageInfo.versionCode));
 
             ByteArrayOutputStream iconOutput = new ByteArrayOutputStream();
             Drawable icon = packageInfo.applicationInfo.loadIcon(context.getPackageManager());
             ((BitmapDrawable) icon).getBitmap().compress(Bitmap.CompressFormat.PNG, 0, iconOutput);
-            mMetadata.put("app_icon_base64", Base64.encodeToString(iconOutput.toByteArray(), Base64.DEFAULT));
+            mMetadata.put(APP_ICON_BASE_64_KEY, Base64.encodeToString(iconOutput.toByteArray(), Base64.DEFAULT));
         }
-        mMetadata.put("device_id", Settings.Secure.getString(context.getContentResolver(), Settings.Secure.ANDROID_ID));
-        mMetadata.put("device_model", "Android " + Build.VERSION.RELEASE);
-        mMetadata.put("device_name", Build.MANUFACTURER + " " + Build.MODEL);
+        mMetadata.put(DEVICE_ID_KEY, Settings.Secure.getString(context.getContentResolver(), Settings.Secure.ANDROID_ID));
+        mMetadata.put(DEVICE_MODEL_KEY, "Android " + Build.VERSION.RELEASE);
+        mMetadata.put(DEVICE_NAME_KEY, Build.MANUFACTURER + " " + Build.MODEL);
     }
 
-    public void addSQLiteDatabase(SQLiteDatabase database) {
-        addDomain(new RuntimeDomain(this, database));
-        addDomain(new IndexedDBDomain(this, database));
-        addDomain(new PageDomain(this));
+    public HashMap<String, String> getMetadata() {
+        return mMetadata;
     }
 
-    public void addDomain(Domain domain) {
-        mDomains.put(domain.getDomainName(), domain);
+    public void addSQLiteDatabase(String name, SQLiteDatabase database) {
+        RuntimeDomain runtimeDomain = (RuntimeDomain) getDomain(RuntimeDomain.getDomainName());
+        if (runtimeDomain == null) {
+            runtimeDomain = new RuntimeDomain(this);
+            addDomain(RuntimeDomain.getDomainName(), runtimeDomain);
+        }
+        runtimeDomain.addDatabase(name, database);
+
+        IndexedDBDomain indexedDBDomain = (IndexedDBDomain) getDomain(IndexedDBDomain.getDomainName());
+        if (indexedDBDomain == null) {
+            indexedDBDomain = new IndexedDBDomain(this);
+            addDomain(IndexedDBDomain.getDomainName(), indexedDBDomain);
+        }
+        indexedDBDomain.addDatabase(name, database);
+
+
+        PageDomain pageDomain = (PageDomain) getDomain(PageDomain.getDomainName());
+        if (pageDomain == null) {
+            addDomain(PageDomain.getDomainName(), new PageDomain(this));
+        }
+    }
+
+    public void addDomain(String domainName, Domain domain) {
+        mDomains.put(domainName, domain);
+    }
+
+    public Domain getDomain(String domainName) {
+        return mDomains.get(domainName);
     }
 
     public void connect() {
@@ -118,7 +151,7 @@ public class Debugger extends WebSocketConnectionHandler {
             if (domain == null || !mDomains.containsKey(domain)) {
                 HashMap<String, Object> response = new HashMap<String, Object>();
                 response.put("id", id);
-                response.put("error", "unknown domain" + domain);
+                response.put("error", "Unknown domain " + domain);
                 mConnection.sendTextMessage(mMapper.writeValueAsString(response));
             } else {
                 Domain handler = mDomains.get(domain);
