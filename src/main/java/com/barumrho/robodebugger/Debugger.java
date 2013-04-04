@@ -20,7 +20,11 @@ import de.tavendo.autobahn.WebSocketConnectionHandler;
 import de.tavendo.autobahn.WebSocketException;
 import org.codehaus.jackson.map.ObjectMapper;
 
+import javax.jmdns.JmDNS;
+import javax.jmdns.ServiceEvent;
+import javax.jmdns.ServiceListener;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -41,9 +45,8 @@ public class Debugger extends WebSocketConnectionHandler {
     private HashMap<String, Domain> mDomains = new HashMap<String, Domain>();
     private HashMap<String, String> mMetadata;
 
-    public Debugger(String webSocketUri) {
+    public Debugger() {
         super();
-        mWebSocketUri = webSocketUri;
     }
 
     public void configureAppMetadata(Context context) {
@@ -107,14 +110,73 @@ public class Debugger extends WebSocketConnectionHandler {
         return mDomains.get(domainName);
     }
 
-    public void connect() {
+    public void connect(String webSocketUri) {
+        mWebSocketUri = webSocketUri;
         try {
+            Log.d(TAG, "Connecting to " + webSocketUri);
             WebSocketConnection connection = new WebSocketConnection();
             mConnection = connection;
             mConnection.connect(mWebSocketUri, this);
         } catch (WebSocketException e) {
             Log.d(TAG, e.toString());
         }
+    }
+
+    public void autoconnect() {
+        Thread discoveryThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                JmDNS jmdns = null;
+                try {
+                    jmdns = JmDNS.create();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+
+                if (jmdns == null) {
+                    Log.e(TAG, "Could not get an instance of JmDNS");
+                    return;
+                }
+
+                jmdns.addServiceListener("_ponyd._tcp.local.", new ServiceListener() {
+                    @Override
+                    public void serviceAdded(ServiceEvent serviceEvent) {
+                        Log.d(TAG, "Service added: " + serviceEvent.toString());
+                        serviceEvent.getDNS().requestServiceInfo("_ponyd._tcp.local.", serviceEvent.getName());
+                    }
+
+                    @Override
+                    public void serviceRemoved(ServiceEvent serviceEvent) {
+                        Log.d(TAG, "Service removed: " + serviceEvent.toString());
+                    }
+
+                    @Override
+                    public void serviceResolved(ServiceEvent serviceEvent) {
+                        mWebSocketUri = "ws://" + serviceEvent.getInfo().getHostAddresses()[0] + ":" + serviceEvent.getInfo().getPort() + "/device";
+                        Log.d(TAG, "Service resolved: " + serviceEvent.toString());
+                    }
+                });
+
+                jmdns.list("_ponyd._tcp.local.");
+
+                while (mWebSocketUri == null) {
+                }
+
+                try {
+                    Log.d(TAG, "Closing JmDNS");
+                    jmdns.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+
+        discoveryThread.start();
+
+        while (mWebSocketUri == null) {
+        }
+
+        connect(mWebSocketUri);
     }
 
     @Override
