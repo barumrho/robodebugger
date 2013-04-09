@@ -147,7 +147,14 @@ public class IndexedDBDomain extends Domain {
         SQLiteDatabase database = mDatabaseMap.get(databaseName);
         String primaryKeyName = mPrimaryKeys.get(databaseName).get(table);
         indexName = (indexName != null && indexName.length() > 0) ? indexName : primaryKeyName;
-        Cursor cursor = database.query(table, null, null, null, null, null, indexName, Integer.toString(pageSize));
+
+        Cursor countCursor = database.rawQuery("SELECT COUNT(*) FROM " + table, null);
+        countCursor.moveToFirst();
+        int count = countCursor.getInt(0);
+        params.put("hasMore", count - (skipCount + pageSize) > 0);
+
+        String limit = Integer.toString(skipCount) + ", " + Integer.toString(pageSize);
+        Cursor cursor = database.query(table, null, null, null, null, null, indexName, limit);
         if (cursor.moveToFirst()) {
             while (!cursor.isAfterLast()) {
                 HashMap<String, Object> entry = new HashMap<String, Object>();
