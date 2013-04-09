@@ -8,6 +8,7 @@ import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
+import android.os.Handler;
 import android.provider.Settings;
 import android.util.Base64;
 import android.util.Log;
@@ -39,11 +40,14 @@ public class Debugger extends WebSocketConnectionHandler {
     public static final String DEVICE_NAME_KEY = "device_name";
 
     private static final String TAG = "ROBODEBUGGER";
+    private static final String SERVICE_NAME = "_ponyd._tcp.local.";
     private String mWebSocketUri;
     private WebSocketConnection mConnection;
     private ObjectMapper mMapper = new ObjectMapper();
     private HashMap<String, Domain> mDomains = new HashMap<String, Domain>();
     private HashMap<String, String> mMetadata;
+    private Handler mHandler;
+    private JmDNS mJmDNS;
 
     public Debugger() {
         super();
@@ -123,26 +127,27 @@ public class Debugger extends WebSocketConnectionHandler {
     }
 
     public void autoconnect() {
+        mHandler = new Handler();
+
         Thread discoveryThread = new Thread(new Runnable() {
             @Override
             public void run() {
-                JmDNS jmdns = null;
                 try {
-                    jmdns = JmDNS.create();
+                    mJmDNS = JmDNS.create();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
 
-                if (jmdns == null) {
+                if (mJmDNS == null) {
                     Log.e(TAG, "Could not get an instance of JmDNS");
                     return;
                 }
 
-                jmdns.addServiceListener("_ponyd._tcp.local.", new ServiceListener() {
+                mJmDNS.addServiceListener(SERVICE_NAME, new ServiceListener() {
                     @Override
                     public void serviceAdded(ServiceEvent serviceEvent) {
                         Log.d(TAG, "Service added: " + serviceEvent.toString());
-                        serviceEvent.getDNS().requestServiceInfo("_ponyd._tcp.local.", serviceEvent.getName());
+                        serviceEvent.getDNS().requestServiceInfo(SERVICE_NAME, serviceEvent.getName());
                     }
 
                     @Override
@@ -157,26 +162,28 @@ public class Debugger extends WebSocketConnectionHandler {
                     }
                 });
 
-                jmdns.list("_ponyd._tcp.local.");
+                mJmDNS.list(SERVICE_NAME);
 
                 while (mWebSocketUri == null) {
                 }
 
                 try {
                     Log.d(TAG, "Closing JmDNS");
-                    jmdns.close();
+                    mJmDNS.close();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
+
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        connect(mWebSocketUri);
+                    }
+                });
             }
         });
 
         discoveryThread.start();
-
-        while (mWebSocketUri == null) {
-        }
-
-        connect(mWebSocketUri);
     }
 
     @Override
