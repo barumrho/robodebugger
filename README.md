@@ -7,6 +7,10 @@ PonyDebugger client for Android
 
 ## How to Use
 
+RoboDebugger depends on PonyDebugger's `ponyd` server. To install,
+please follow the [PonyDebugger Quick Start]
+(https://github.com/square/PonyDebugger#quick-start).
+
 ```java
 Context context = ...;
 SQLiteDatabase db = ...;
