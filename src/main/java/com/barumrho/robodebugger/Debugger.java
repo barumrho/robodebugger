@@ -127,6 +127,7 @@ public class Debugger extends WebSocketConnectionHandler {
     }
 
     public void autoconnect() {
+        Log.i(TAG, "Autoconnecting...");
         mHandler = new Handler();
 
         Thread discoveryThread = new Thread(new Runnable() {
@@ -162,6 +163,7 @@ public class Debugger extends WebSocketConnectionHandler {
                     }
                 });
 
+                Log.i(TAG, "Looking for PonyDebugger service...");
                 mJmDNS.list(SERVICE_NAME);
 
                 while (mWebSocketUri == null) {
