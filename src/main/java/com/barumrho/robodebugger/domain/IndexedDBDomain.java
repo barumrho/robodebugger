@@ -26,10 +26,13 @@ public class IndexedDBDomain extends Domain {
 
     @Override
     public Map<String, Object> respond(String method, Map<String, Object> params) {
-        Integer requestId = (Integer) params.get("requestId");
-
         HashMap<String, Object> response = new HashMap<String, Object>();
         String error = null;
+        Integer requestId = null;
+        if (params != null) {
+            requestId = (Integer) params.get("requestId");
+        }
+
         if ("requestDatabaseNamesForFrame".equals(method)) {
             broadcastDatabaseNames(requestId);
         } else if ("requestDatabase".equals(method)) {
