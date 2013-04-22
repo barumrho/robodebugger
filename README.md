@@ -32,6 +32,8 @@ Once you have `ponyd` installed, run it with the following command,
 so that your Android device can discover your `ponyd` instance.
 
 ```
+ponyd serve -i 0.0.0.0
+```
 
 ## How to Use
 
