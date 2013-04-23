@@ -26,6 +26,8 @@ public class RuntimeDomain extends Domain {
     @Override
     public Map<String, Object> respond(String method, Map<String, Object> params) {
         HashMap<String, Object> response = new HashMap<String, Object>();
+        HashMap<String, Object> result = new HashMap<String, Object>();
+        response.put("result", result);
         String error = null;
 
         if ("getProperties".equals(method)) {
@@ -35,9 +37,13 @@ public class RuntimeDomain extends Domain {
             String table = parts[1];
             String id = parts[2];
 
-            HashMap<String, Object> result = new HashMap<String, Object>();
-            response.put("result", result);
             result.put("result", getObject(databaseName, table, id));
+        } else if ("evaluate".equals(method)) {
+            String expression = (String) params.get("expression");
+            String objectGroup = (String) params.get("objectGroup");
+            boolean returnByValue = "true".equals(params.get("returnByValue"));
+
+            result.put("result", evaluate(expression, objectGroup, returnByValue));
         }
 
         response.put("error", error);
@@ -71,5 +77,31 @@ public class RuntimeDomain extends Domain {
         }
 
         return columns;
+    }
+
+    private Map<String, Object> evaluate(String expression, String objectGroup, boolean returnByValue) {
+        if (mDatabaseMap.isEmpty()) {
+            throw new RuntimeException("There is no database available.");
+        }
+
+        if (objectGroup.equals("completion")) {
+            return null;
+        }
+
+        HashMap<String, Object> result = new HashMap<String, Object>();
+
+        SQLiteDatabase database = mDatabaseMap.values().iterator().next();
+
+        if (expression.startsWith("insert") || expression.startsWith("INSERT")) {
+            database.execSQL(expression);
+            result.put("type", "number");
+            result.put("value", 41);
+        } else {
+            Cursor cursor = database.rawQuery(expression, null);
+            result.put("type", "number");
+            result.put("value", 42);
+        }
+
+        return result;
     }
 }
