@@ -41,8 +41,11 @@ public class Debugger extends WebSocketConnectionHandler {
 
     private static final String TAG = "ROBODEBUGGER";
     private static final String SERVICE_NAME = "_ponyd._tcp.local.";
+
     private String mWebSocketUri;
     private WebSocketConnection mConnection;
+    private boolean mIsConnected;
+    private boolean mIsAutoconnectEnabled;
     private ObjectMapper mMapper = new ObjectMapper();
     private HashMap<String, Domain> mDomains = new HashMap<String, Domain>();
     private HashMap<String, String> mMetadata;
@@ -115,6 +118,12 @@ public class Debugger extends WebSocketConnectionHandler {
     }
 
     public void connect(String webSocketUri) {
+        if (mIsConnected) {
+            Log.d(TAG, "Already connected to " + mWebSocketUri);
+            return;
+        }
+
+        mIsConnected = true;
         mWebSocketUri = webSocketUri;
         try {
             Log.d(TAG, "Connecting to " + webSocketUri);
@@ -123,11 +132,13 @@ public class Debugger extends WebSocketConnectionHandler {
             mConnection.connect(mWebSocketUri, this);
         } catch (WebSocketException e) {
             Log.d(TAG, e.toString());
+            mIsConnected = false;
         }
     }
 
     public void autoconnect() {
         Log.i(TAG, "Autoconnecting...");
+        mIsAutoconnectEnabled = true;
         mHandler = new Handler();
 
         Thread discoveryThread = new Thread(new Runnable() {
@@ -158,30 +169,30 @@ public class Debugger extends WebSocketConnectionHandler {
 
                     @Override
                     public void serviceResolved(ServiceEvent serviceEvent) {
-                        mWebSocketUri = "ws://" + serviceEvent.getInfo().getHostAddresses()[0] + ":" + serviceEvent.getInfo().getPort() + "/device";
                         Log.d(TAG, "Service resolved: " + serviceEvent.toString());
+
+                        final String socketUri = "ws://" + serviceEvent.getInfo().getHostAddresses()[0] + ":" + serviceEvent.getInfo().getPort() + "/device";
+                        mHandler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                connect(socketUri);
+                            }
+                        });
                     }
                 });
 
                 Log.i(TAG, "Looking for PonyDebugger service...");
                 mJmDNS.list(SERVICE_NAME);
 
-                while (mWebSocketUri == null) {
+                while (!mIsConnected) {
                 }
 
+                mHandler = null;
                 try {
-                    Log.d(TAG, "Closing JmDNS");
                     mJmDNS.close();
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    Log.e(TAG, "IOException while closing JmDNS.");
                 }
-
-                mHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        connect(mWebSocketUri);
-                    }
-                });
             }
         });
 
@@ -241,6 +252,11 @@ public class Debugger extends WebSocketConnectionHandler {
     @Override
     public void onClose(int code, String reason) {
         Log.d(TAG, "Connection lost.");
+        mIsConnected = false;
+
+        if (mIsAutoconnectEnabled) {
+            autoconnect();
+        }
     }
 
     public void sendEvent(Map<String, Object> event) {
